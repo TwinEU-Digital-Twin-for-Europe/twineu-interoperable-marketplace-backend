@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  blockchain:
+    image: ptriantis/marketplace-besu-node:latest
+    container_name: twineu-besu-node
+    restart: unless-stopped
+    user: root
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    volumes:
+      - ./blockchain/genesis.json:/config/genesis.json
+      - ./blockchain/key:/config/key
+      - besu-data:/opt/besu/data
+    command: >
+      --genesis-file=/config/genesis.json
+      --node-private-key-file=/config/key
+      --data-path=/opt/besu/data
+      --rpc-http-enabled 
+      --rpc-http-host=0.0.0.0 
+      --rpc-http-cors-origins="*" 
+      --host-allowlist="*"
+      --rpc-http-api=ETH,NET,WEB3,IBFT,MINER,ADMIN,TXPOOL,DEBUG,TRACE
+      --rpc-ws-enabled 
+      --rpc-ws-host=0.0.0.0
+      --miner-enabled 
+      --miner-coinbase=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+    healthcheck:
+      test: ["CMD", "curl", "-X", "POST", "--data", '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}', "http://localhost:8545"]
+      interval: 5s
+      retries: 20
+    networks:
+      - twineu-net
+
+  contract-deployer:
+    image: ptriantis/marketplace-contract-deployer:latest
+    container_name: twineu-deployer
+    restart: on-failure
+    environment:
+      - BESU_RPC_URL=${BESU_RPC_URL}
+      - BANK_PRIVATE_KEY=${BANK_PRIVATE_KEY}
+    depends_on:
+      blockchain:
+        condition: service_healthy
+    volumes:
+      - shared-data:/app/shared
+    networks:
+      - twineu-net
+
+  db:
+    image: postgres:15-alpine
+    container_name: twineu-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - twineu-net
+
+  backend:
+    image: ptriantis/marketplace-backend:latest
+    container_name: twineu-marketplace-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Database & Security
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      - CRYPTO_SALT=${CRYPTO_SALT}
+      
+      # Blockchain 
+      - BLOCKCHAIN_URL=${BESU_RPC_URL}
+      - BANK_PRIVATE_KEY=${BANK_PRIVATE_KEY}
+      - BANK_ADDRESS=${BANK_ADDRESS}
+      
+      # Marketplace Core Settings
+      - MARKETPLACE_PUBLIC_URL=${MARKETPLACE_PUBLIC_URL}
+      - DEV_MODE=${DEV_MODE}
+      - MOCK_AUTH=${MOCK_AUTH}
+      - REQUIRE_PASSPHRASE=${REQUIRE_PASSPHRASE}
+      
+      # Middleware M2M Credentials
+      - MIDDLEWARE_USER=${MIDDLEWARE_USER}
+      - MIDDLEWARE_PASS=${MIDDLEWARE_PASS}
+      
+      # Middleware Endpoints
+      - MIDDLEWARE_AUTH_URL=${MIDDLEWARE_AUTH_URL}
+      - MIDDLEWARE_AUTH_CURRENT_URL=${MIDDLEWARE_AUTH_CURRENT_URL}
+      - MIDDLEWARE_CATALOG_BASE_URL=${MIDDLEWARE_CATALOG_BASE_URL}
+      - MIDDLEWARE_OFFERED_SERVICES_URL=${MIDDLEWARE_OFFERED_SERVICES_URL}
+      - MIDDLEWARE_SINGLE_SERVICE_URL=${MIDDLEWARE_SINGLE_SERVICE_URL}
+      - MIDDLEWARE_USER_URL=${MIDDLEWARE_USER_URL}
+      - MIDDLEWARE_SUBSCRIPTIONS_URL=${MIDDLEWARE_SUBSCRIPTIONS_URL}
+      - MIDDLEWARE_SUBSCRIPTIONS_LIST_URL=${MIDDLEWARE_SUBSCRIPTIONS_LIST_URL}
+      - MIDDLEWARE_DATA_CONSUMED_LIST_URL=${MIDDLEWARE_DATA_CONSUMED_LIST_URL}
+      - MIDDLEWARE_DATA_CONSUMED_DETAIL_URL=${MIDDLEWARE_DATA_CONSUMED_DETAIL_URL}
+      
+      # External Integrations
+      - WORKBENCH_URL=${WORKBENCH_URL}
+      - LOCAL_API_BASE_URL=${LOCAL_API_BASE_URL}
+      - MARKETPLACE_SYSTEM_USER_ID=${MARKETPLACE_SYSTEM_USER_ID}
+    depends_on:
+      contract-deployer:
+        condition: service_completed_successfully
+      blockchain:
+        condition: service_healthy
+      db:
+        condition: service_started
+    volumes:
+      - shared-data:/app/shared
+    networks:
+      - twineu-net
+
+volumes:
+  besu-data:
+  shared-data:
+  postgres-data:
+
+networks:
+  twineu-net:
+    driver: bridge

@@ -1,0 +1,24 @@
+# Environment Variables & Secrets
+.env
+.env.*
+*.pem
+
+# Local Databases & Persistent Data
+*.sqlite
+*.sqlite3
+data/
+postgres-data/
+besu-data/
+shared/
+contract-config.json
+
+# Hardhat Build Artifacts
+blockchain/artifacts/
+blockchain/cache/
+
+# OS & IDE Files
+.DS_Store
+.idea/
+.vscode/
+node_modules/
+
